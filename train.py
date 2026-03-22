@@ -243,7 +243,9 @@ torch.set_float32_matmul_precision('high') #The result: 80 ms per step instead
 #get the logits
 # random initialization of the model, random weights, not trained
 
-model = GPT(GPTConfig()) 
+model = GPT(GPTConfig(vocab_size=50304))  # we override the vocab size because we want good number divided by 12, 32, 64, 128...
+# this increase speed up from 67 ms per step to 65 ms per step.
+# it speed up because cuda use block tiles power of 2
 model.to(device)
 
 # this is the new feature in PyTorch 2.0 that allows us to compile the model for
