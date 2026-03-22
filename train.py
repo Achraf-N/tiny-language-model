@@ -43,6 +43,7 @@ class CausalSelfAttention(nn.Module):
         # FlashAttention tiles the computation: it loads small blocks of Q and K into fast SRAM.
         # Computes the softmax and multiplies by V inside SRAM, without writing the intermediate att to HBM.
         # Only the final output block is written back to HBM.
+        # Spped up from 85ms to 67ms"
         y = F.scaled_dot_product_attention(q, k, v, attn_mask=self.bias[:,:,:T,:T], is_causal=True) # this is the computation of the attention using flash attention, it is more memory efficient and faster than the naive implementation
 
 #------------------------------------------------------------------------------------------------------------
