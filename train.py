@@ -191,7 +191,34 @@ class GPT(nn.Module):
         return model
 
 
+    # Weight decay = regularization (shrink weights) -> It prevents overfitting and can improve generalization, but it can also slow down training and reduce the final performance if it is too high, so we need to find a good balance between the two, we will use a weight decay of 0.1 in this example, which is a common value that works well for many models, but you can experiment with different values to see how it affects the training and the final performance of the model.
+    # Good for large weight matrices but it break some parameters like bias and layernorm weight
 
+    # Big matrices >=2D → prone to overfitting → decay them
+    # Small control params (bias, norm) = 1D → don’t touch them
+    def configure_optimizers(self, weight_decay, learning_rate, device):
+        # start with all candidates that requires grad
+        param_dict = {pn: p for pn, p in self.named_parameters()}
+        param_dict = {pn: p for pn, p in param_dict.items() if p.requires_grad}
+        # create optim groups. Any parameters that is 2D will be weighted decayed, otherewise not
+        # i.e all weight tensor in matmuls + embeddings decay, all bias and layernorm weight tensors no decay
+        decay_params = [n for n, p in param_dict.items() if p.ndim >= 2]
+        nodecay_params = [n for n, p in param_dict.items() if p.ndim < 2]
+        optim_groups = [
+            {"params": decay_params, "weight_decay": weight_decay},
+            {"params": nodecay_params, "weight_decay": 0.0},
+        ]
+        num_decay_params = sum(p.numel() for n, p in param_dict.items() if n in decay_params)
+        num_nodecay_params = sum(p.numel() for n, p in param_dict.items() if n in nodecay_params)
+        print(f"num decay params tensors: {len(decay_params):,} | with {num_decay_params:,} parameters")
+        print(f"num no decay params tensors: {len(nodecay_params):,} | with {num_nodecay_params:,} parameters")
+        # create AdamW optimizer and use fused Adam if we are on CUDA
+        fused_available = 'fused' in inspect.signature(torch.optim.AdamW).parameters
+        use_fused = fused_available and device == 'cuda'
+        print("using fused AdamW:", use_fused)
+        optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=(0.9, 0.95), eps=1e-8, fused=use_fused)
+        return optimizer
+    
 class DataLoader:
     def __init__(self, B, T):
         self.B = B
@@ -291,7 +318,9 @@ def get_lr(it):
 # right now we intitialize the vocab size to 50257 but it's uniformly random probabilities.
 #Vocabulary elements have uniform probability
 # we need training we use adam optimizer
-optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, betas=(0.9, 0.95), eps=1e-8) # this is the AdamW optimizer that we will use to train the model, it is a variant of the Adam optimizer that decouples the weight decay from the learning rate, which can give us better performance and stability during training
+#optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, betas=(0.9, 0.95), eps=1e-8) # this is the AdamW optimizer that we will use to train the model, it is a variant of the Adam optimizer that decouples the weight decay from the learning rate, which can give us better performance and stability during training
+optimizer = model.configure_optimizers(weight_decay=0.1, learning_rate=6e-4, device=device) 
+
 # we use 50 steps of training
 # 50 steps =
 #    50 batches (maybe random)
