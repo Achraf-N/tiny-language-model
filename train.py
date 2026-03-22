@@ -261,13 +261,37 @@ model.to(device)
 # i comment because i need install triton in windows
 #model = torch.compile(model)
 
+#---------------------------------------------------------------------------------------------------------
+# dynamic α:
+#early → large steps (learn fast)
+#late → small steps (refine)
+# learning rate scheduler
+max_lr = 6e-4
+min_lr = 0.1*max_lr
+warmup_steps = 10
+max_steps = 50
+
+def get_lr(it):
+    if it < warmup_steps:
+        return max_lr * (it+1) / warmup_steps
+    #if it >learn_decay_iters return min_lr
+    if it > max_steps:
+        return min_lr
+    # in between use cosine decay
+    decay_ratio = (it - warmup_steps) / (max_steps - warmup_steps)
+    assert 0 <= decay_ratio <= 1, "decay_ratio must be between 0 and 1"
+    coef = 0.5 * (1 + math.cos(math.pi * decay_ratio))
+    return min_lr + coef * (max_lr - min_lr)
+
+
+#---------------------------------------------------------------------------------------------------------
 
 #logits, loss = model(x)
 #print(logits.shape) 
 # right now we intitialize the vocab size to 50257 but it's uniformly random probabilities.
 #Vocabulary elements have uniform probability
 # we need training we use adam optimizer
-optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
+optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, betas=(0.9, 0.95), eps=1e-8) # this is the AdamW optimizer that we will use to train the model, it is a variant of the Adam optimizer that decouples the weight decay from the learning rate, which can give us better performance and stability during training
 # we use 50 steps of training
 # 50 steps =
 #    50 batches (maybe random)
@@ -285,11 +309,14 @@ for i in range(50):
         # now the activation tensor is bf16 not everything change the weights stay torch float 32
         logits, loss = model(x, y)
     loss.backward()
+    norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0) # this is the gradient clipping that we will use to prevent the exploding gradients problem, it clips the gradients to a maximum norm of 1.0, which can help us stabilize the training and prevent the gradients from becoming too large
     optimizer.step()
     torch.cuda.synchronize() # we synchronize the GPU to make sure that all the operations are finished before we measure the time
     t1 = time.time()
-    dt = (t1 - t0) * 1000 # we convert the time to milliseconds
-    print(f"step {i+1}: loss {loss.item():.4f}, time {dt:.2f}ms")
+    dt = (t1 - t0) # time difference in seconds
+    token_processed = train_loader.B * train_loader.T
+    tokens_per_sec = token_processed / dt
+    print(f"step {i+1}: loss {loss.item():.4f}, | lr: {get_lr(i):.2e} | time {dt:.2f}ms | tok/sec: {tokens_per_sec:.2f} | grad norm: {norm:.2f}")
 
     #print(f"step {i+1}: loss {loss.item()}")
 
