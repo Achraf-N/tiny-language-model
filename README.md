@@ -1,6 +1,6 @@
 # Build GPT2 From Scratch
 
-This repository contains a from-scratch implementation of nanoGPT, built step by step to deeply understand how modern language models like GPT-2 work under the hood.
+This repository contains a from-scratch implementation of GPT, built step by step to deeply understand how modern language models like GPT-2 work under the hood.
 The project is intentionally structured so that each component is implemented progressively, making it easy to follow the evolution of the model and training pipeline.
 
 # Goal
