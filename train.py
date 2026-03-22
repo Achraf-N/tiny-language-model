@@ -4,6 +4,7 @@ from typing import final
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 from dataclasses import dataclass
 import math
+import inspect
 from xml.parsers.expat import model
 import torch
 import torch.nn as nn
@@ -202,14 +203,14 @@ class GPT(nn.Module):
         param_dict = {pn: p for pn, p in param_dict.items() if p.requires_grad}
         # create optim groups. Any parameters that is 2D will be weighted decayed, otherewise not
         # i.e all weight tensor in matmuls + embeddings decay, all bias and layernorm weight tensors no decay
-        decay_params = [n for n, p in param_dict.items() if p.ndim >= 2]
-        nodecay_params = [n for n, p in param_dict.items() if p.ndim < 2]
+        decay_params = [p for n, p in param_dict.items() if p.ndim >= 2]
+        nodecay_params = [p for n, p in param_dict.items() if p.ndim < 2]
         optim_groups = [
             {"params": decay_params, "weight_decay": weight_decay},
             {"params": nodecay_params, "weight_decay": 0.0},
         ]
-        num_decay_params = sum(p.numel() for n, p in param_dict.items() if n in decay_params)
-        num_nodecay_params = sum(p.numel() for n, p in param_dict.items() if n in nodecay_params)
+        num_decay_params = sum(p.numel() for p in decay_params)
+        num_nodecay_params = sum(p.numel() for p in nodecay_params)
         print(f"num decay params tensors: {len(decay_params):,} | with {num_decay_params:,} parameters")
         print(f"num no decay params tensors: {len(nodecay_params):,} | with {num_nodecay_params:,} parameters")
         # create AdamW optimizer and use fused Adam if we are on CUDA
@@ -345,7 +346,7 @@ for i in range(50):
     dt = (t1 - t0) # time difference in seconds
     token_processed = train_loader.B * train_loader.T
     tokens_per_sec = token_processed / dt
-    print(f"step {i+1}: loss {loss.item():.4f}, | lr: {get_lr(i):.2e} | time {dt:.2f}ms | tok/sec: {tokens_per_sec:.2f} | grad norm: {norm:.2f}")
+    print(f"step {i+1}: loss {loss.item():.4f}, | lr: {get_lr(i):.2e} | time {dt*1000:.2f}ms | tok/sec: {tokens_per_sec:.2f} | grad norm: {norm:.2f}")
 
     #print(f"step {i+1}: loss {loss.item()}")
 
