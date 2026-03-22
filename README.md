@@ -4,7 +4,7 @@ This repository contains a from-scratch implementation of GPT, built step by ste
 The project is intentionally structured so that each component is implemented progressively, making it easy to follow the evolution of the model and training pipeline.
 
 # Goal
-  - Rebuild nanoGPT / GPT-style transformer from scratch
+  - Rebuild GPT-style transformer from scratch
   - Understand every piece of the system:
   - Tokenization & embeddings
   - Self-attention (multi-head)
