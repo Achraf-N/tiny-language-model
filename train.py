@@ -260,7 +260,15 @@ torch.manual_seed(1337)
 if torch.cuda.is_available():
     torch.cuda.manual_seed_all(1337)
     
-train_loader = DataLoader(B=8, T=128)
+Total_batch_size = 524288 # 2 ** 19. 0.5M, is number of tokens
+B  = 16 # micro batch size
+T = 1024 # sequence length
+
+assert Total_batch_size % (B * T) == 0, "Total batch size must be divisible by B * T"
+grad_accum_steps = Total_batch_size // (B * T) # this is the number of gradient accumulation steps that we will use to achieve the desired total batch size, it is calculated by dividing the total batch size by the product of the micro batch size and the sequence length, so in this case it will be 32, which means that we will accumulate gradients for 32 steps before we update the weights of the model, this allows us to effectively use a larger batch size than what our GPU memory can handle, and it can help us stabilize the training and improve the performance of the model
+print(f"Total batch size = {Total_batch_size}")
+print(f"==> calculated gradient accumulation steps: {grad_accum_steps}")
+train_loader = DataLoader(B=B, T=T)
 
 #float 32 matmul precision -> time 80 ms per step before it's 130 ms per step
 torch.set_float32_matmul_precision('high') #The result: 80 ms per step instead of 130 ms — a ~40% speedup.
@@ -330,15 +338,16 @@ optimizer = model.configure_optimizers(weight_decay=0.1, learning_rate=6e-4, dev
 #    50 updates
 for i in range(50):
     t0 = time.time()
-    x,y = train_loader.next_batch()
-    x = x.to(device)
-    y = y.to(device)
     # we start by zeroing the gradients of the optimizer, then we forward the input through the model to get the logits and the loss, then we backpropagate the loss to get the gradients, and then we step the optimizer to update the weights of the model, and then we print the loss for this step
     optimizer.zero_grad()
-    with torch.autocast(device_type=device, dtype=torch.float16):
-        # now the activation tensor is bf16 not everything change the weights stay torch float 32
-        logits, loss = model(x, y)
-    loss.backward()
+    for k in range(grad_accum_steps):
+        x,y = train_loader.next_batch()
+        x = x.to(device)
+        y = y.to(device)
+        with torch.autocast(device_type=device, dtype=torch.float16):
+            # now the activation tensor is bf16 not everything change the weights stay torch float 32
+            logits, loss = model(x, y)
+        loss.backward()
     norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0) # this is the gradient clipping that we will use to prevent the exploding gradients problem, it clips the gradients to a maximum norm of 1.0, which can help us stabilize the training and prevent the gradients from becoming too large
     optimizer.step()
     torch.cuda.synchronize() # we synchronize the GPU to make sure that all the operations are finished before we measure the time
@@ -375,6 +384,8 @@ x = tokens.to(device) # (5, 8)
 #set the seed to 42
 torch.manual_seed(42)
 torch.cuda.manual_seed_all(42)
+
+
 # for each iteration in these loop we are going to be adding a column of indices at each one of these rows
 while x.size(1) < max_length:
     with torch.no_grad():
@@ -391,11 +402,13 @@ while x.size(1) < max_length:
         # append  to the sequence
         x = torch.cat((x, x_col), dim=1) # (B, T+1) we append the next token to the sequence
 
+
 #print the generated sequences
 for i in range(num_return_sequences):
     generated_tokens = x[i,:max_length].tolist() # (T,)
     decoded = enc.decode(generated_tokens) # we decode the generated tokens back to text
     print(">",decoded)
+
 
 
 
